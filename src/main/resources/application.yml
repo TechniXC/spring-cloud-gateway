@@ -1,0 +1,125 @@
+server:
+  port: 8082
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+
+spring:
+  application:
+    name: spring-cloud-gateway
+  data:
+    redis:
+      port: 6379
+      host: localhost
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8443/realms/bank_realm
+          jwk-set-uri: http://localhost:8443/realms/bank_realm/protocol/openid-connect/certs
+        opaquetoken:
+          introspection-uri: http://localhost:8443/realms/bank_realm/protocol/openid-connect/token/introspect
+          client-id: gateway_resource_server
+          client-secret: ttxdx7UWaNtPtpHh0Wh2DXo0xPGssMmX
+  cloud:
+    gateway:
+      enabled: true
+      httpclient:
+        connect-timeout: 10000
+        response-timeout: 30s
+      routes:
+        - id: auth
+          uri: http://localhost:8443
+          predicates:
+            - Path=/auth/**
+          filters:
+            - RewritePath=/auth, /realms/bank_realm/protocol/openid-connect/token
+        - id: fast-rest-service
+          uri: http://epsilon.BH
+          predicates:
+            - Path=/fast-service/**
+          filters:
+            - StripPrefix=1
+            - CustomUrl
+        - id: slow-rest-service-v0
+          uri: http://epsilon.BH:8280
+          predicates:
+            - Path=/slow-service/v0/**
+          filters:
+            - StripPrefix=2
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter:
+                  replenishRate: 5
+                  burstCapacity: 10
+        - id: slow-rest-service-v1
+          uri: http://epsilon.BH:8281
+          predicates:
+            - Path=/slow-service/v1/**
+          filters:
+            - StripPrefix=2
+
+gateway:
+  versions:
+    [default]:
+      fast-rest-service: 8180
+      slow-service: 8280
+    [0.0.1]:
+      fast-rest-service: 8180
+      slow-service: 8280
+    [0.0.2]:
+      fast-rest-service: 8181
+      slow-service: 8281
+
+management:
+  endpoints:
+    gateway:
+      enabled: true
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+      show-components: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        all: true
+        http.server.requests: true
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0
+    propagation:
+      type: b3
+  prometheus:
+    metrics:
+      export:
+        step: 10s
+  info:
+    env:
+      enabled: true
+    java:
+      enabled: true
+    os:
+      enabled: true
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      defaultFallback:
+        slidingWindowSize: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10000
+        registerHealthIndicator: true
+  timelimiter:
+    instances:
+      defaultFallback:
+        timeoutDuration: 4s
