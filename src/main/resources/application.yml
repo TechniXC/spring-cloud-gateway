@@ -1,0 +1,109 @@
+server:
+  port: 8083
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+
+spring:
+  application:
+    name: spring-cloud-gateway
+  data:
+    redis:
+      port: 6379
+      host: redis
+  security:
+    oauth2:
+      resourceserver:
+        opaquetoken:
+          introspection-uri: http://keycloak-server:8443/realms/bank_realm/protocol/openid-connect/token/introspect
+          client-id: gateway_resource_server
+          client-secret: ttxdx7UWaNtPtpHh0Wh2DXo0xPGssMmX
+  cloud:
+    refresh:
+      enabled: false
+    gateway:
+      enabled: true
+      httpclient:
+        connect-timeout: 10000
+        response-timeout: 30s
+      routes:
+        - id: auth
+          uri: http://keycloak-server:8080
+          predicates:
+            - Path=/realms/**
+        - id: fast-rest-service
+          uri: http://fast-rest-service-version:${docker.port}
+          predicates:
+            - Path=/fast-service/**
+          filters:
+            - StripPrefix=1
+            - CustomUrl
+        - id: slow-rest-service-v0
+          uri: http://slow-rest-service-v0:${docker.port}
+          predicates:
+            - Path=/slow-service/v0/**
+          filters:
+            - StripPrefix=2
+        - id: slow-rest-service-v1
+          uri: http://slow-rest-service-v1:${docker.port}
+          predicates:
+            - Path=/slow-service/v1/**
+          filters:
+            - StripPrefix=2
+
+gateway:
+  versions:
+    [default]:
+      fast-rest-service: v0
+      slow-service: v0
+    [0.0.1]:
+      fast-rest-service: v0
+      slow-service: v0
+    [0.0.2]:
+      fast-rest-service: v1
+      slow-service: v1
+
+docker:
+  port: 8080
+
+management:
+  zipkin:
+    tracing:
+      endpoint: http://grafana-tempo:9411/api/v2/spans
+  endpoints:
+    gateway:
+      enabled: true
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+      show-components: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        all: true
+        http.server.requests: true
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0
+    propagation:
+      type: b3
+  prometheus:
+    metrics:
+      export:
+        step: 10s
+  info:
+    env:
+      enabled: true
+    java:
+      enabled: true
+    os:
+      enabled: true
